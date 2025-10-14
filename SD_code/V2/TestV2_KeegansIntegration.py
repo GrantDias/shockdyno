@@ -186,7 +186,12 @@ def run_interactive(ser, logger):
 def main():
     port = "COM8"   # update for your board
     baud = 115200
-    csv_name = f"Shock_Dyno_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    import os
+    # Ensure the csv folder exists relative to the project root
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    csv_dir = os.path.join(project_root, 'csv')
+    os.makedirs(csv_dir, exist_ok=True)
+    csv_name = os.path.join(csv_dir, f"Shock_Dyno_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv")
 
     ser = open_serial(port, baud)
     logger = SerialLogger(ser, csv_name)
