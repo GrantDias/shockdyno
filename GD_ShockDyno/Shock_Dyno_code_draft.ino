@@ -20,7 +20,7 @@ int motor=10;//Pin the motorcontroller is connected to
 int lin_pot_pin=A5;
 int Tcouple_pin=4;
 
-int calibration_factor=-7050.5; //Found from the calibration code
+int calibration_factor=-7050.5; //Found from the calibration code 
 int loadcell_data_pin=3;
 int loadcell_clock_pin=2;
 
