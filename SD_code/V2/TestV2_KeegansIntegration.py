@@ -28,8 +28,8 @@ class SerialLogger:
         """Start the logging thread and open the CSV file."""
         self._file = open(self.csv_path, 'w', newline='')
         self._writer = csv.writer(self._file)
-        # Add Velocity as 4th column
-        self._writer.writerow(['Millis', 'Load_Cell', 'Linear_Pot (scaled)', 'Velocity', 'Thermocouple'])
+        # Add Smoothed Velocity as 4th column, original velocity as 5th, and Highpass Velocity as 6th
+        self._writer.writerow(['Millis', 'Load_Cell', 'Linear_Pot (scaled)', 'Smoothed_Velocity', 'Velocity', 'Highpass_Velocity', 'Thermocouple'])
         self._file.flush()
 
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -51,7 +51,9 @@ class SerialLogger:
             self._file.flush()
 
     def _run(self):
-        """Thread function: continuously read from serial and log data with velocity."""
+        """Thread function: continuously read from serial and log data with velocity and smoothed velocity."""
+        # Store last 6 (time, lin_pot_val) for smoothing
+        history = []  # list of (time, lin_pot_val)
         while not self._stop_event.is_set():
             try:
                 # Wait for sync byte 0xAA
@@ -78,6 +80,12 @@ class SerialLogger:
                     current_time = None
                     parts[2] = "NaN"
 
+                # Add to history for smoothing
+                if current_time is not None:
+                    history.append((current_time, lin_pot_val))
+                    if len(history) > 6:
+                        history.pop(0)
+
                 # Compute velocity (derivative)
                 if self.prev_time is not None and current_time is not None:
                     dt = current_time - self.prev_time
@@ -88,12 +96,39 @@ class SerialLogger:
                 else:
                     velocity = 0  # first data point
 
+                # Compute smoothed velocity (average of 5 velocities from t-5 to t)
+                smoothed_velocity = ''
+                if len(history) == 6:
+                    velocities = []
+                    for i in range(1, 6):
+                        t0, p0 = history[i-1]
+                        t1, p1 = history[5]
+                        dt = t1 - t0
+                        if dt > 0:
+                            v = (p1 - p0) / dt
+                        else:
+                            v = 0
+                        velocities.append(v)
+                    smoothed_velocity = sum(velocities) / len(velocities)
+                else:
+                    smoothed_velocity = ''  # Not enough data yet
+
                 # Save current values for next iteration
                 self.prev_time = current_time
                 self.prev_pos = lin_pot_val
 
-                # Append velocity as 4th column
-                parts.insert(3, f"{velocity:.3f}")  # insert before thermocouple
+
+                # Insert smoothed velocity as 4th column, original velocity as 5th
+                parts.insert(3, f"{smoothed_velocity:.3f}" if smoothed_velocity != '' else '')
+                parts.insert(4, f"{velocity:.3f}")  # original velocity
+
+                # Highpass filter: remove velocity values over 25
+                try:
+                    velocity_val = float(velocity)
+                    highpass_velocity = f"{velocity_val:.3f}" if abs(velocity_val) <= 25 else ''
+                except Exception:
+                    highpass_velocity = ''
+                parts.insert(5, highpass_velocity)
 
                 # Save millis for alignment with switch messages
                 self.last_millis = parts[0]
